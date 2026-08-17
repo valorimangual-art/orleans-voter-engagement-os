@@ -15,6 +15,9 @@ https://valorimangual-art.github.io/orleans-voter-engagement-os/
 - `Website/precinct_boundaries.geojson` contains 349 precinct map shapes.
 - `Website/supabase-config.js` creates the public Supabase client.
 - `docs/supabase-security.md` records the intended public database access.
+- `docs/population-import-guide.md` explains how to prepare and validate Census population data.
+- `data/templates/precinct_population_workbook.csv` is the 349-row population worksheet.
+- `tools/validate-population-workbook.js` checks the worksheet before import.
 
 ## Data and privacy
 
