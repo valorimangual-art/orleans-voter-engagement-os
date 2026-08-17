@@ -14,10 +14,11 @@ https://valorimangual-art.github.io/orleans-voter-engagement-os/
 - `Website/outreach.js` loads, validates, and displays public data.
 - `Website/precinct_boundaries.geojson` contains 349 precinct map shapes.
 - `Website/supabase-config.js` creates the public Supabase client.
+- `docs/supabase-security.md` records the intended public database access.
 
 ## Data and privacy
 
-The public page reads precinct statistics from the Supabase `precincts` table. It requests only an aggregate count from the `volunteers` table and does not download volunteer names or locations.
+The public page reads a limited set of precinct statistics from the Supabase `precincts` table. It does not query the `volunteers` table or download volunteer names, contact details, addresses, locations, or notes.
 
 The Supabase publishable key is allowed in browser code. Security must still be enforced in Supabase with Row Level Security (RLS). Anonymous users should have read-only access to approved public statistics and no row-level access to private volunteer records.
 
