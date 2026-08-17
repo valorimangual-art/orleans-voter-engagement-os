@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Orleans Parish Voter Outreach</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"><link rel="stylesheet" href="outreach.css">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><script src="supabase-config.js"></script>
+</head>
+<body>
+  <header class="site-header"><div><h1>Orleans Parish Voter Outreach</h1><p id="data-summary">349 precincts · loading current outreach data…</p></div><a class="admin-link" href="command-center.html">Open command center</a></header>
+  <nav class="tabs" aria-label="Main navigation"><button class="active" data-panel="overview">Overview</button><button data-panel="map">Map</button><button data-panel="precincts">Precincts</button><button data-panel="priority">Priority List</button><button data-panel="volunteers">Volunteers</button><button data-panel="polling">Polling Locations</button></nav>
+  <main>
+    <div id="message" class="message hidden" role="status"></div>
+    <section id="overview" class="panel active">
+      <div class="cards"><article class="card"><strong id="total-precincts">349</strong><span>Precincts</span></article><article class="card"><strong id="total-registered">—</strong><span>Registered voters</span></article><article class="card"><strong id="verified-vap">—</strong><span>Verified adult population</span></article><article class="card"><strong id="volunteer-count">—</strong><span>Volunteers logged</span></article></div>
+      <div class="note"><strong>About registration rates:</strong> rates appear only where precinct-level registered-voter and voting-age-population records pass basic validation. Records above 100% are flagged for crosswalk review and excluded from priority rankings.</div>
+      <div class="section-heading"><div><h2>Lowest verified registration rates</h2><p>Potential outreach targets with usable population data</p></div></div><div id="overview-priority" class="table-wrap"></div>
+    </section>
+    <section id="map" class="panel"><div class="legend"><span><i class="dot low"></i>Under 60%</span><span><i class="dot medium"></i>60–85%</span><span><i class="dot high"></i>85–100%</span><span><i class="dot unknown"></i>Needs review / no data</span></div><div id="precinct-map" aria-label="Map of Orleans Parish precincts"></div></section>
+    <section id="precincts" class="panel"><div class="section-heading"><div><h2>Precincts</h2><p id="precinct-count">Loading records…</p></div><input id="precinct-search" type="search" placeholder="Search precinct or ward"></div><div id="precinct-table" class="table-wrap"></div></section>
+    <section id="priority" class="panel"><div class="section-heading"><div><h2>Priority List</h2><p>Lowest validated registration rates first</p></div></div><div id="priority-table" class="table-wrap"></div></section>
+    <section id="volunteers" class="panel"><div class="section-heading"><div><h2>Volunteers</h2><p>Current outreach roster</p></div></div><div id="volunteer-table" class="table-wrap"></div></section>
+    <section id="polling" class="panel"><div class="empty-state"><h2>Polling Locations</h2><p>No polling-location dataset is connected yet. Add an official election-day locations table before publishing addresses here.</p></div></section>
+  </main>
+  <footer>Orleans Parish Voter Outreach · population metrics require precinct-level source verification</footer><script src="outreach.js"></script>
+</body></html>

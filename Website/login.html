@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Organizer Login | Orleans Parish Civic OS</title>
+<link rel="stylesheet" href="style.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="supabase-config.js"></script>
+<script src="assets/js/auth.js"></script>
+</head>
+<body>
+<div style="display:flex;flex-direction:column;min-height:100vh">
+  <header class="site">
+    <div class="brand">ORLEANS PARISH <span class="accent">CIVIC OS</span></div>
+    <nav class="site">
+      <a href="command-center.html">Back to Command Center</a>
+    </nav>
+  </header>
+
+  <main class="site">
+    <div class="form-wrap" style="max-width:460px;margin:24px auto">
+      <div class="page-title">Organizer Login</div>
+
+      <section class="card card-pad" aria-labelledby="login-heading">
+        <h1 id="login-heading" class="card-title" style="font-size:16px;margin-top:0">Organizer Access</h1>
+
+        <p id="auth-status" role="status" aria-live="polite" aria-atomic="true" style="margin:0 0 16px;color:#6b6a63;font-size:13px">
+          Checking organizer access…
+        </p>
+
+        <form id="login-form" hidden>
+          <div class="field">
+            <label for="email">Email</label>
+            <input id="email" name="email" type="email" autocomplete="username" required
+              style="box-sizing:border-box;width:100%;padding:9px 10px;border:1px solid #dedad0;border-radius:5px;font:600 12.5px 'Nunito',sans-serif">
+          </div>
+
+          <div class="field">
+            <label for="password">Password</label>
+            <input id="password" name="password" type="password" autocomplete="current-password" required
+              style="box-sizing:border-box;width:100%;padding:9px 10px;border:1px solid #dedad0;border-radius:5px;font:600 12.5px 'Nunito',sans-serif">
+          </div>
+
+          <button id="submit-button" class="primary" type="submit">Sign In</button>
+        </form>
+
+        <div id="authenticated-controls" hidden>
+          <p id="signed-in-name" style="margin:0 0 14px;font-size:13px"></p>
+          <a id="open-organizer-link" href="admin/command-center.html"
+            style="display:inline-block;background:#0b1f3a;color:#FFD700;font:800 12.5px 'Nunito',sans-serif;padding:10px 18px;border-radius:5px;margin-right:8px">
+            Open Organizer Area
+          </a>
+          <button id="logout-button" class="primary" type="button">Sign Out</button>
+        </div>
+
+        <div id="retry-controls" hidden>
+          <button id="retry-button" class="primary" type="button">Try Again</button>
+        </div>
+      </section>
+    </div>
+  </main>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  const form = document.getElementById('login-form');
+  const emailInput = document.getElementById('email');
+  const passwordInput = document.getElementById('password');
+  const submitButton = document.getElementById('submit-button');
+  const statusMessage = document.getElementById('auth-status');
+  const authenticatedControls = document.getElementById('authenticated-controls');
+  const signedInName = document.getElementById('signed-in-name');
+  const openOrganizerLink = document.getElementById('open-organizer-link');
+  const logoutButton = document.getElementById('logout-button');
+  const retryControls = document.getElementById('retry-controls');
+  const retryButton = document.getElementById('retry-button');
+  let submitting = false;
+  let redirectChecked = false;
+
+  function hasExplicitNextPath() {
+    return new URL(window.location.href).searchParams.has('next');
+  }
+
+  async function getExistingAdminDestination() {
+    if (!hasExplicitNextPath()) return null;
+
+    const safePath = OrleansAuth.getSafeReturnPath();
+    const requestedPath = new URL(window.location.href).searchParams.get('next');
+    if (!requestedPath || safePath === 'admin/index.html' && requestedPath !== safePath) return null;
+
+    try {
+      const target = new URL(safePath, window.location.href);
+      const response = await fetch(target.href, { method: 'HEAD', cache: 'no-store' });
+      return response.ok ? target.href : null;
+    } catch (error) {
+      console.error('The organizer return destination could not be checked.', {
+        name: error && error.name ? error.name : 'Error'
+      });
+      return null;
+    }
+  }
+
+  async function render(authState) {
+    statusMessage.textContent = authState.message;
+    form.hidden = authState.status !== 'anonymous';
+    authenticatedControls.hidden = !['authorized', 'unauthorized'].includes(authState.status);
+    openOrganizerLink.hidden = authState.status !== 'authorized';
+    retryControls.hidden = authState.status !== 'error';
+
+    if (authState.status === 'loading') {
+      form.hidden = true;
+      authenticatedControls.hidden = true;
+      retryControls.hidden = true;
+    }
+
+    if (authState.status === 'authorized') {
+      const displayName = authState.fullName.trim();
+      signedInName.textContent = displayName
+        ? `Signed in as ${displayName}. Organizer access is ready.`
+        : 'You are signed in. Organizer access is ready.';
+
+      if (!redirectChecked) {
+        redirectChecked = true;
+        const destination = await getExistingAdminDestination();
+        if (destination) window.location.assign(destination);
+      }
+    } else if (authState.status === 'unauthorized') {
+      signedInName.textContent = 'You are signed in, but this account cannot access organizer tools.';
+    } else {
+      signedInName.textContent = '';
+      if (authState.status === 'anonymous') redirectChecked = false;
+    }
+  }
+
+  OrleansAuth.onStateChange((authState) => {
+    void render(authState);
+  });
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (submitting) return;
+
+    const email = emailInput.value.trim();
+    const password = passwordInput.value;
+    if (!email || !password) {
+      statusMessage.textContent = 'Enter both email and password.';
+      return;
+    }
+
+    submitting = true;
+    submitButton.disabled = true;
+    emailInput.disabled = true;
+    passwordInput.disabled = true;
+
+    try {
+      await OrleansAuth.signIn(email, password);
+    } finally {
+      passwordInput.value = '';
+      submitting = false;
+      submitButton.disabled = false;
+      emailInput.disabled = false;
+      passwordInput.disabled = false;
+    }
+  });
+
+  logoutButton.addEventListener('click', async () => {
+    logoutButton.disabled = true;
+    try {
+      await OrleansAuth.signOut();
+    } finally {
+      logoutButton.disabled = false;
+    }
+  });
+
+  retryButton.addEventListener('click', () => {
+    window.location.reload();
+  });
+
+  void OrleansAuth.initialize();
+})();
+</script>
+</body>
+</html>
