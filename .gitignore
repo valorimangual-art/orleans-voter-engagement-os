@@ -1,0 +1,21 @@
+# Operating-system and editor files
+.DS_Store
+Thumbs.db
+.vscode/
+
+# Local environment variables and secrets
+.env
+.env.*
+!.env.example
+
+# Dependencies, logs, and temporary files
+node_modules/
+*.log
+tmp/
+temp/
+
+# Private or working data files
+data/raw/
+data/private/
+*.xlsx
+*.xls
