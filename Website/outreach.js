@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  const state = { precincts: [], geojson: null, map: null, layer: null, layers: {}, highlightedLayer: null };
+  const state = { precincts: [], geojson: null, locations: [], map: null, layer: null, layers: {}, highlightedLayer: null, highlightedLocation: null, searchResults: [] };
   const $ = id => document.getElementById(id);
   const num = value => {
     const parsed = Number(value);
@@ -89,6 +89,15 @@
     </div>`;
   }
 
+  function locationLabel(item) {
+    return item?.formatted || [item?.housenumber, item?.street].filter(Boolean).join(' ') || item?.name || 'Location';
+  }
+
+  function locationSearchText(item) {
+    return [item?.formatted, item?.housenumber, item?.street, item?.name, item?.district, item?.suburb]
+      .filter(Boolean).join(' ').toLowerCase();
+  }
+
   function table(rows) {
     if (!rows.length) return '<div class="empty-state"><p>No matching verified records are available.</p></div>';
     return `<table><thead><tr><th>Precinct</th><th>Registered</th><th>VAP</th><th>Gap</th><th>Reg. Rate</th></tr></thead><tbody>${rows.map(item => `
@@ -107,13 +116,66 @@
     $('data-summary').textContent = `${state.precincts.length || 349} precincts · current registration and outreach data`;
     $('overview-priority').innerHTML = table(priority().slice(0, 10));
     $('priority-table').innerHTML = table(priority());
-    $('precinct-map-suggestions').replaceChildren(...state.precincts.map(item => {
-      const option = document.createElement('option');
-      option.value = code(item);
-      option.label = name(item);
-      return option;
-    }));
     renderPrecincts();
+  }
+
+  function hideMapSearchResults() {
+    $('map-search-results').classList.add('hidden');
+    $('precinct-map-search').setAttribute('aria-expanded', 'false');
+  }
+
+  function renderMapSearchResults() {
+    const query = $('precinct-map-search').value.trim();
+    const normalized = canonicalPrecinct(query);
+    const textQuery = query.toLowerCase();
+    const precinctResults = query ? state.precincts.filter(item =>
+      canonicalPrecinct(code(item)) === normalized || `${code(item)} ${name(item)}`.toLowerCase().includes(textQuery)
+    ).slice(0, 5).map(item => ({ type: 'precinct', item })) : [];
+    const locationResults = query.length >= 2 ? state.locations.filter(feature =>
+      locationSearchText(feature.properties || {}).includes(textQuery)
+    ).slice(0, 8).map(feature => ({ type: 'location', item: feature })) : [];
+    state.searchResults = [...precinctResults, ...locationResults].slice(0, 10);
+
+    const results = $('map-search-results');
+    results.replaceChildren(...state.searchResults.map((result, index) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.role = 'option';
+      button.dataset.resultIndex = index;
+      const type = document.createElement('strong');
+      type.textContent = result.type === 'precinct' ? 'Precinct' : 'Address';
+      const label = document.createElement('span');
+      label.textContent = result.type === 'precinct' ? code(result.item) : locationLabel(result.item.properties || {});
+      button.append(type, label);
+      return button;
+    }));
+    results.classList.toggle('hidden', !state.searchResults.length);
+    $('precinct-map-search').setAttribute('aria-expanded', String(Boolean(state.searchResults.length)));
+  }
+
+  function clearMapHighlights() {
+    if (state.highlightedLayer) state.layer.resetStyle(state.highlightedLayer);
+    if (state.highlightedLocation) {
+      state.layers.locations.resetStyle(state.highlightedLocation);
+      if (!state.map.hasLayer(state.layers.locations)) state.map.removeLayer(state.highlightedLocation);
+    }
+    state.highlightedLayer = null;
+    state.highlightedLocation = null;
+  }
+
+  function showPrecinctLayer(targetLayer, searchedLocation = '', popupPoint = null) {
+    clearMapHighlights();
+    state.highlightedLayer = targetLayer;
+    targetLayer.setStyle({ color: '#c9ff2f', weight: 4, fillOpacity: 0.75 });
+    targetLayer.bringToFront();
+    if (searchedLocation) {
+      targetLayer.getPopup().setContent(`<div class="searched-location"><strong>Searched address</strong><span>${esc(searchedLocation)}</span></div>${precinctPopup(targetLayer.feature.properties || {})}`);
+      targetLayer.once('popupclose', () => targetLayer.getPopup().setContent(precinctPopup(targetLayer.feature.properties || {})));
+    } else {
+      targetLayer.getPopup().setContent(precinctPopup(targetLayer.feature.properties || {}));
+    }
+    if (popupPoint) targetLayer.openPopup(L.latLng(popupPoint[1], popupPoint[0]));
+    else targetLayer.openPopup();
   }
 
   function findPrecinctOnMap() {
@@ -143,15 +205,94 @@
       return;
     }
 
-    if (state.highlightedLayer) state.layer.resetStyle(state.highlightedLayer);
-    state.highlightedLayer = targetLayer;
-    targetLayer.setStyle({ color: '#c9ff2f', weight: 4, fillOpacity: 0.75 });
-    targetLayer.bringToFront();
+    showPrecinctLayer(targetLayer);
     input.value = code(item);
     input.blur();
+    hideMapSearchResults();
     $('map-search-status').textContent = `Showing ${code(item)}`;
     state.map.flyToBounds(targetLayer.getBounds(), { padding: [28, 28], maxZoom: 16, duration: 0.6 });
-    targetLayer.openPopup();
+  }
+
+  function pointRelationToFeature(point, feature) {
+    const onSegment = (a, b) => {
+      const cross = (point[1] - a[1]) * (b[0] - a[0]) - (point[0] - a[0]) * (b[1] - a[1]);
+      if (Math.abs(cross) > 1e-10) return false;
+      return point[0] >= Math.min(a[0], b[0]) - 1e-10 && point[0] <= Math.max(a[0], b[0]) + 1e-10 &&
+        point[1] >= Math.min(a[1], b[1]) - 1e-10 && point[1] <= Math.max(a[1], b[1]) + 1e-10;
+    };
+    const inRing = ring => {
+      let inside = false;
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        if (onSegment(ring[j], ring[i])) return 'boundary';
+        if ((ring[i][1] > point[1]) !== (ring[j][1] > point[1]) &&
+          point[0] < (ring[j][0] - ring[i][0]) * (point[1] - ring[i][1]) / (ring[j][1] - ring[i][1]) + ring[i][0]) inside = !inside;
+      }
+      return inside ? 'inside' : 'outside';
+    };
+    const polygons = feature.geometry?.type === 'Polygon' ? [feature.geometry.coordinates] : feature.geometry?.coordinates || [];
+    for (const polygon of polygons) {
+      const outer = inRing(polygon[0]);
+      if (outer === 'boundary') return 'boundary';
+      if (outer !== 'inside') continue;
+      let inHole = false;
+      for (const hole of polygon.slice(1)) {
+        const relation = inRing(hole);
+        if (relation === 'boundary') return 'boundary';
+        if (relation === 'inside') inHole = true;
+      }
+      if (!inHole) return 'inside';
+    }
+    return 'outside';
+  }
+
+  function findLocationOnMap(feature) {
+    if (!state.layer || !state.layers.locations) {
+      $('map-search-status').textContent = 'Map locations are still loading';
+      return;
+    }
+    const point = feature.geometry.coordinates;
+    const inside = state.geojson.features.filter(precinct => pointRelationToFeature(point, precinct) === 'inside');
+    const boundaries = state.geojson.features.filter(precinct => pointRelationToFeature(point, precinct) === 'boundary');
+    if (boundaries.length || inside.length !== 1) {
+      $('map-search-status').textContent = boundaries.length ? 'Location lies on a precinct boundary' : inside.length ? 'Location matches multiple precincts' : 'Location is outside all precincts';
+      hideMapSearchResults();
+      return;
+    }
+    if ($('congress-change-filter').value !== 'all') {
+      $('congress-change-filter').value = 'all';
+      renderMapFilter();
+    }
+    const target = canonicalPrecinct(code(inside[0].properties));
+    let precinctLayer = null;
+    state.layer.eachLayer(layer => {
+      if (canonicalPrecinct(code(layer.feature?.properties)) === target) precinctLayer = layer;
+    });
+    const locationLayer = state.layers.locations.getLayers().find(layer => layer.feature === feature);
+    if (!precinctLayer || !locationLayer) {
+      $('map-search-status').textContent = 'Location could not be displayed';
+      return;
+    }
+    const label = locationLabel(feature.properties || {});
+    showPrecinctLayer(precinctLayer, label, point);
+    state.highlightedLocation = locationLayer;
+    locationLayer.setStyle({ radius: 8, weight: 3, fillOpacity: 1 });
+    if (!state.map.hasLayer(state.layers.locations)) locationLayer.addTo(state.map);
+    $('precinct-map-search').value = label;
+    $('precinct-map-search').blur();
+    hideMapSearchResults();
+    $('map-search-status').textContent = `Address is in ${code(inside[0].properties)}`;
+    state.map.flyTo([point[1], point[0]], 16, { duration: 0.6 });
+  }
+
+  function selectMapSearchResult(index) {
+    const result = state.searchResults[index];
+    if (!result) return;
+    if (result.type === 'precinct') {
+      $('precinct-map-search').value = code(result.item);
+      findPrecinctOnMap();
+    } else {
+      findLocationOnMap(result.item);
+    }
   }
 
   function renderPrecincts() {
@@ -259,6 +400,7 @@
       fetchOptionalGeoJSON('locations.geojson', 'locations')
     ]);
     const overlays = { Precincts: state.layers.precincts };
+    state.locations = locations?.features || [];
 
     state.layers.neighborhoods = createOptionalLayer(neighborhoods, 'neighborhood_boundaries.geojson', 'neighborhoods', () =>
       L.geoJSON(neighborhoods, {
@@ -340,13 +482,21 @@
   }));
   $('precinct-search').addEventListener('input', renderPrecincts);
   $('congress-change-filter').addEventListener('change', renderMapFilter);
-  $('precinct-map-search-button').addEventListener('click', findPrecinctOnMap);
-  $('precinct-map-search').addEventListener('change', findPrecinctOnMap);
+  $('precinct-map-search-button').addEventListener('click', () => {
+    if (canonicalPrecinct($('precinct-map-search').value)) findPrecinctOnMap();
+    else selectMapSearchResult(0);
+  });
+  $('precinct-map-search').addEventListener('input', renderMapSearchResults);
   $('precinct-map-search').addEventListener('keydown', event => {
     if (event.key === 'Enter') {
       event.preventDefault();
-      findPrecinctOnMap();
+      if (canonicalPrecinct(event.currentTarget.value)) findPrecinctOnMap();
+      else selectMapSearchResult(0);
     }
+  });
+  $('map-search-results').addEventListener('click', event => {
+    const button = event.target.closest('[data-result-index]');
+    if (button) selectMapSearchResult(Number(button.dataset.resultIndex));
   });
 
   if (window.matchMedia('(max-width: 768px)').matches) {
