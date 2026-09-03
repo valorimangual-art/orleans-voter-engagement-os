@@ -61,6 +61,32 @@
     return `<span class="rate ${rateClass(value)}">${value == null ? 'Review' : `${(value * 100).toFixed(1)}%`}</span>`;
   }
 
+  function popupMetric(label, value, className = '') {
+    return `<div class="popup-metric ${className}"><dt>${esc(label)}</dt><dd>${value}</dd></div>`;
+  }
+
+  function precinctPopup(item) {
+    const congress = congressionalFields(item);
+    const registrationRate = rate(item);
+    return `<div class="precinct-popup">
+      <strong class="popup-title">Precinct ${esc(code(item))}</strong>
+      <dl class="popup-primary">
+        ${popupMetric('Registered voters', fmt(registered(item)))}
+        ${popupMetric('Current / projected VAP', fmt(population(item)))}
+        ${popupMetric('Registration rate', registrationRate == null ? 'Needs review' : `${(registrationRate * 100).toFixed(1)}%`)}
+        ${popupMetric('Registration gap', fmt(gap(item)))}
+        ${popupMetric('Congressional district 2026', esc(congress.congress2026))}
+        ${popupMetric('Congressional change', esc(congress.change))}
+      </dl>
+      <dl class="popup-secondary">
+        ${popupMetric('Neighborhood', esc(detail(item, 'neighborhood', 'neighborhood_name')))}
+        ${popupMetric('Council district', esc(detail(item, 'council_district', 'city_council_district')))}
+        ${popupMetric('Planning district', esc(detail(item, 'planning_district', 'planning_district_name')))}
+        ${popupMetric('Congressional district 2024', esc(congress.congress2024))}
+      </dl>
+    </div>`;
+  }
+
   function table(rows) {
     if (!rows.length) return '<div class="empty-state"><p>No matching verified records are available.</p></div>';
     return `<table><thead><tr><th>Precinct</th><th>Registered</th><th>VAP</th><th>Gap</th><th>Reg. Rate</th></tr></thead><tbody>${rows.map(item => `
@@ -163,8 +189,12 @@
         },
         onEachFeature: (feature, layer) => {
           const item = feature.properties || {};
-          const congress = congressionalFields(item);
-          layer.bindPopup(`<div class="precinct-popup"><strong>${esc(code(item))}</strong><br>Neighborhood: ${esc(detail(item, 'neighborhood', 'neighborhood_name'))}<br>Council district: ${esc(detail(item, 'council_district', 'city_council_district'))}<br>Planning district: ${esc(detail(item, 'planning_district', 'planning_district_name'))}<br>Congress 2024: ${esc(congress.congress2024)}<br>Congress 2026: ${esc(congress.congress2026)}<br>Congress change: ${esc(congress.change)}<br>Registered voters: ${fmt(registered(item))}</div>`);
+          layer.bindPopup(precinctPopup(item), {
+            maxWidth: 340,
+            maxHeight: 390,
+            autoPanPaddingTopLeft: L.point(16, 70),
+            autoPanPaddingBottomRight: L.point(16, 16)
+          });
         }
       }).addTo(state.map);
       state.layers.precincts = state.layer;
@@ -263,5 +293,11 @@
   }));
   $('precinct-search').addEventListener('input', renderPrecincts);
   $('congress-change-filter').addEventListener('change', renderMapFilter);
-  load();
+
+  if (window.matchMedia('(max-width: 768px)').matches) {
+    const mapTab = document.querySelector('[data-panel="map"]');
+    mapTab?.click();
+  } else {
+    load();
+  }
 })();
