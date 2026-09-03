@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  const state = { precincts: [], geojson: null, map: null, layer: null, layers: {} };
+  const state = { precincts: [], geojson: null, map: null, layer: null, layers: {}, highlightedLayer: null };
   const $ = id => document.getElementById(id);
   const num = value => {
     const parsed = Number(value);
@@ -25,7 +25,7 @@
   const CD2_TO_CD1 = new Set(`03/19 03/20 05/10 05/11 06/07 06/08 14/12 14/19 14/25 16/02 16/03 16/04 16/08 17/02`.split(' '));
 
   function canonicalPrecinct(value) {
-    const match = String(value ?? '').trim().toUpperCase().match(/^(?:W(?:ARD)?\s*)?0*(\d+)\s*[-/]\s*(?:P(?:RECINCT)?\s*)?0*(\d+)([A-Z]?)$/);
+    const match = String(value ?? '').trim().toUpperCase().match(/^(?:W(?:ARD)?\s*)?0*(\d+)\s*(?:[-/]\s*(?:P(?:RECINCT)?\s*)?|\s+P(?:RECINCT)?\s*)0*(\d+)([A-Z]?)$/);
     return match ? `${String(Number(match[1])).padStart(2, '0')}/${String(Number(match[2])).padStart(2, '0')}${match[3]}` : null;
   }
 
@@ -74,16 +74,16 @@
       <strong class="popup-title">Precinct ${esc(code(item))}</strong>
       <dl class="popup-primary">
         ${popupMetric('Registered voters', fmt(registered(item)))}
-        ${popupMetric('Current / projected VAP', fmt(population(item)))}
+        ${popupMetric('Projected 2026 VAP', fmt(population(item)))}
         ${popupMetric('Registration rate', registrationRate == null ? 'Needs review' : `${(registrationRate * 100).toFixed(1)}%`)}
         ${popupMetric('Registration gap', fmt(gap(item)))}
         ${popupMetric('Congressional district 2026', esc(congress.congress2026))}
         ${popupMetric('Congressional change', esc(congress.change))}
       </dl>
       <dl class="popup-secondary">
-        ${popupMetric('Neighborhood', esc(detail(item, 'neighborhood', 'neighborhood_name')))}
-        ${popupMetric('Council district', esc(detail(item, 'council_district', 'city_council_district')))}
-        ${popupMetric('Planning district', esc(detail(item, 'planning_district', 'planning_district_name')))}
+        ${popupMetric('Primary Neighborhood', esc(detail(item, 'primary_neighborhood')))}
+        ${popupMetric('Council District', esc(detail(item, 'council_district', 'city_council_district')))}
+        ${popupMetric('Primary Planning District', esc(detail(item, 'primary_planning_district')))}
         ${popupMetric('Congressional district 2024', esc(congress.congress2024))}
       </dl>
     </div>`;
@@ -107,7 +107,51 @@
     $('data-summary').textContent = `${state.precincts.length || 349} precincts · current registration and outreach data`;
     $('overview-priority').innerHTML = table(priority().slice(0, 10));
     $('priority-table').innerHTML = table(priority());
+    $('precinct-map-suggestions').replaceChildren(...state.precincts.map(item => {
+      const option = document.createElement('option');
+      option.value = code(item);
+      option.label = name(item);
+      return option;
+    }));
     renderPrecincts();
+  }
+
+  function findPrecinctOnMap() {
+    const input = $('precinct-map-search');
+    const target = canonicalPrecinct(input.value);
+    const item = state.precincts.find(precinct => canonicalPrecinct(code(precinct)) === target);
+    if (!target || !item) {
+      $('map-search-status').textContent = 'Precinct not found';
+      return;
+    }
+    if (!state.layer) {
+      $('map-search-status').textContent = 'Map is still loading';
+      return;
+    }
+
+    if ($('congress-change-filter').value !== 'all') {
+      $('congress-change-filter').value = 'all';
+      renderMapFilter();
+    }
+
+    let targetLayer = null;
+    state.layer.eachLayer(layer => {
+      if (canonicalPrecinct(code(layer.feature?.properties)) === target) targetLayer = layer;
+    });
+    if (!targetLayer) {
+      $('map-search-status').textContent = 'Precinct is not available on the map';
+      return;
+    }
+
+    if (state.highlightedLayer) state.layer.resetStyle(state.highlightedLayer);
+    state.highlightedLayer = targetLayer;
+    targetLayer.setStyle({ color: '#c9ff2f', weight: 4, fillOpacity: 0.75 });
+    targetLayer.bringToFront();
+    input.value = code(item);
+    input.blur();
+    $('map-search-status').textContent = `Showing ${code(item)}`;
+    state.map.flyToBounds(targetLayer.getBounds(), { padding: [28, 28], maxZoom: 16, duration: 0.6 });
+    targetLayer.openPopup();
   }
 
   function renderPrecincts() {
@@ -283,6 +327,7 @@
     if (!state.layer || !state.geojson) return;
     const selected = $('congress-change-filter').value;
     const features = state.geojson.features.filter(feature => selected === 'all' || congressionalFields(feature.properties || {}).change === selected);
+    state.highlightedLayer = null;
     state.layer.clearLayers();
     state.layer.addData({ type: 'FeatureCollection', features });
     $('map-precinct-count').textContent = `${features.length} precinct${features.length === 1 ? '' : 's'}`;
@@ -295,6 +340,14 @@
   }));
   $('precinct-search').addEventListener('input', renderPrecincts);
   $('congress-change-filter').addEventListener('change', renderMapFilter);
+  $('precinct-map-search-button').addEventListener('click', findPrecinctOnMap);
+  $('precinct-map-search').addEventListener('change', findPrecinctOnMap);
+  $('precinct-map-search').addEventListener('keydown', event => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      findPrecinctOnMap();
+    }
+  });
 
   if (window.matchMedia('(max-width: 768px)').matches) {
     const mapTab = document.querySelector('[data-panel="map"]');
