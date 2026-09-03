@@ -14,10 +14,12 @@
   const code = item => item?.area_code || item?.precinct_ward || item?.code || item?.precinct || 'Unknown';
   const name = item => item?.area_name || code(item);
   const registered = item => num(item?.registered_voters ?? item?.registered ?? item?.total_registered);
-  const population = item => num(item?.vap ?? item?.voting_age_population ?? item?.adult_population);
-  const gap = item => num(item?.registration_gap ?? (
-    population(item) != null && registered(item) != null ? population(item) - registered(item) : null
-  ));
+  const population = item => num(item?.vap_current ?? item?.vap_projected_2026 ?? item?.vap ?? item?.voting_age_population ?? item?.adult_population);
+  const gap = item => {
+    const pop = population(item);
+    const reg = registered(item);
+    return pop != null && reg != null ? pop - reg : num(item?.registration_gap);
+  };
   const CD1_2024 = new Set(`04/07 04/08 04/09 04/11 04/14 04/15 04/17 04/17A 04/18 04/20 04/21 04/22 04/23 05/12 05/13 05/15 05/16 05/17 05/18 06/09 07/41 07/42 09/45 09/45A 11/04 11/05 11/08 11/09 11/10 11/11 12/05 12/06 12/07 12/09 12/10 13/05 13/07 13/08 14/01 14/02 14/03 14/04 14/05 14/06 14/07 14/08 14/09 14/10 14/11 14/13A 14/14 14/15 14/16 14/17 14/18A 14/20 14/21 16/01 16/01A 17/01 17/17 17/18 17/18A 17/19 17/20`.split(' '));
   const CD1_TO_CD2 = new Set(`09/45 11/04 11/05 11/08 11/09 11/10 11/11 12/05 12/06 12/07 12/09 12/10 13/05 13/07 13/08 14/01 14/02 14/03 14/05 14/06 14/07 14/20`.split(' '));
   const CD2_TO_CD1 = new Set(`03/19 03/20 05/10 05/11 06/07 06/08 14/12 14/19 14/25 16/02 16/03 16/04 16/08 17/02`.split(' '));
@@ -44,7 +46,7 @@
     const stored = num(item?.registration_rate);
     const pop = population(item);
     const reg = registered(item);
-    const value = stored != null ? (stored > 1.5 ? stored / 100 : stored) : (pop > 0 && reg != null ? reg / pop : null);
+    const value = pop > 0 && reg != null ? reg / pop : (stored != null ? (stored > 1.5 ? stored / 100 : stored) : null);
     return value != null && value >= 0 && value <= 1 ? value : null;
   }
 
