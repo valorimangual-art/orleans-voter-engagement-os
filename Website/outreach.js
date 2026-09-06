@@ -43,15 +43,13 @@
   const detail = (item, ...fields) => fields.map(field => item?.[field]).find(value => value != null && value !== '') || 'Not available';
 
   function rate(item) {
-    const stored = num(item?.registration_rate);
     const pop = population(item);
     const reg = registered(item);
-    const value = pop > 0 && reg != null ? reg / pop : (stored != null ? (stored > 1.5 ? stored / 100 : stored) : null);
-    return value != null && value >= 0 && value <= 1 ? value : null;
+    return pop > 0 && reg != null && reg >= 0 ? reg / pop : null;
   }
 
   function rateClass(value) {
-    return value == null ? 'unknown' : value < 0.6 ? 'low' : value < 0.85 ? 'medium' : 'high';
+    return value == null ? 'no-data' : value > 1 ? 'review' : value < 0.6 ? 'low' : value < 0.85 ? 'medium' : 'high';
   }
 
   function fmt(value) {
@@ -60,7 +58,7 @@
 
   function ratePill(item) {
     const value = rate(item);
-    return `<span class="rate ${rateClass(value)}">${value == null ? 'Review' : `${(value * 100).toFixed(1)}%`}</span>`;
+    return `<span class="rate ${rateClass(value)}">${value == null ? 'No data' : `${(value * 100).toFixed(1)}%`}</span>${value > 1 ? '<small class="rate-status">Registered &gt; projected VAP</small>' : ''}`;
   }
 
   function popupMetric(label, value, className = '') {
@@ -75,7 +73,8 @@
       <dl class="popup-primary">
         ${popupMetric('Registered voters', fmt(registered(item)))}
         ${popupMetric('Projected 2026 VAP', fmt(population(item)))}
-        ${popupMetric('Registration rate', registrationRate == null ? 'Needs review' : `${(registrationRate * 100).toFixed(1)}%`)}
+        ${popupMetric('Registration rate', registrationRate == null ? 'No data' : `${(registrationRate * 100).toFixed(1)}%`, registrationRate > 1 ? 'review' : '')}
+        ${registrationRate > 1 ? popupMetric('Status', 'Registered &gt; projected VAP', 'review') : ''}
         ${popupMetric('Registration gap', fmt(gap(item)))}
         ${popupMetric('Congressional district 2026', esc(congress.congress2026))}
         ${popupMetric('Congressional change', esc(congress.change))}
@@ -105,7 +104,7 @@
   }
 
   function priority() {
-    return state.precincts.filter(item => population(item) >= 200 && rate(item) != null).sort((a, b) => rate(a) - rate(b));
+    return state.precincts.filter(item => population(item) >= 200 && rate(item) != null && rate(item) <= 1).sort((a, b) => rate(a) - rate(b));
   }
 
   function render() {
@@ -178,6 +177,16 @@
     else targetLayer.openPopup();
   }
 
+  function preparePrecinctSearch() {
+    state.map.closePopup();
+    clearMapHighlights();
+    if ($('congress-change-filter').value !== 'all') {
+      $('congress-change-filter').value = 'all';
+      renderMapFilter();
+    }
+    if (!state.map.hasLayer(state.layer)) state.layer.addTo(state.map);
+  }
+
   function findPrecinctOnMap() {
     const input = $('precinct-map-search');
     const target = canonicalPrecinct(input.value);
@@ -191,10 +200,7 @@
       return;
     }
 
-    if ($('congress-change-filter').value !== 'all') {
-      $('congress-change-filter').value = 'all';
-      renderMapFilter();
-    }
+    preparePrecinctSearch();
 
     let targetLayer = null;
     state.layer.eachLayer(layer => {
@@ -258,10 +264,7 @@
       hideMapSearchResults();
       return;
     }
-    if ($('congress-change-filter').value !== 'all') {
-      $('congress-change-filter').value = 'all';
-      renderMapFilter();
-    }
+    preparePrecinctSearch();
     const target = canonicalPrecinct(code(inside[0].properties));
     let precinctLayer = null;
     state.layer.eachLayer(layer => {
@@ -371,7 +374,7 @@
           const value = rate(feature.properties);
           return {
             color: '#fff', weight: 1, fillOpacity: 0.55,
-            fillColor: value == null ? '#9ca3af' : value < 0.6 ? '#b23a2e' : value < 0.85 ? '#d68a2c' : '#3f7a5c'
+            fillColor: value == null ? '#9ca3af' : value > 1 ? '#7a3e9d' : value < 0.6 ? '#b23a2e' : value < 0.85 ? '#d68a2c' : '#3f7a5c'
           };
         },
         onEachFeature: (feature, layer) => {
