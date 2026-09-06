@@ -2,6 +2,7 @@
   'use strict';
 
   const state = { precincts: [], geojson: null, locations: [], map: null, layer: null, layers: {}, highlightedLayer: null, highlightedLocation: null, searchResults: [] };
+  const mapFilterIds = ['neighborhood-filter', 'council-filter', 'planning-filter', 'congress-district-filter', 'congress-change-filter'];
   const $ = id => document.getElementById(id);
   const num = value => {
     const parsed = Number(value);
@@ -107,6 +108,34 @@
     return state.precincts.filter(item => population(item) >= 200 && rate(item) != null && rate(item) <= 1).sort((a, b) => rate(a) - rate(b));
   }
 
+  function populateFilter(id, values, allLabel) {
+    const options = [...new Set(values)].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+    $(id).replaceChildren(new Option(allLabel, 'all'), ...options.map(value => new Option(value, value)));
+  }
+
+  function populateMapFilters() {
+    populateFilter('neighborhood-filter', state.precincts.flatMap(item => item.all_neighborhoods || [item.primary_neighborhood]).filter(Boolean), 'All neighborhoods');
+    populateFilter('council-filter', state.precincts.map(item => item.council_district).filter(Boolean), 'All council districts');
+    populateFilter('planning-filter', state.precincts.flatMap(item => item.all_planning_districts || [item.primary_planning_district]).filter(Boolean), 'All planning districts');
+    populateFilter('congress-district-filter', state.precincts.map(item => congressionalFields(item).congress2026).filter(Boolean), 'All congressional districts');
+  }
+
+  function updateMapSummary(features) {
+    const items = features.map(feature => feature.properties || feature);
+    const registeredTotal = items.reduce((sum, item) => sum + (registered(item) || 0), 0);
+    const vapTotal = items.reduce((sum, item) => sum + (population(item) || 0), 0);
+    const aggregateRate = vapTotal > 0 ? registeredTotal / vapTotal : null;
+    $('summary-precincts').textContent = items.length.toLocaleString();
+    $('summary-registered').textContent = registeredTotal.toLocaleString();
+    $('summary-vap').textContent = vapTotal.toLocaleString();
+    $('summary-gap').textContent = (vapTotal - registeredTotal).toLocaleString();
+    $('summary-rate').textContent = aggregateRate == null ? 'No data' : `${(aggregateRate * 100).toFixed(1)}%`;
+    $('summary-rate').className = aggregateRate > 1 ? 'review' : '';
+    $('summary-rate-status').textContent = aggregateRate > 1 ? 'Registered > projected VAP' : '';
+    $('map-filter-status').classList.toggle('hidden', Boolean(items.length));
+    $('map-filter-summary').classList.toggle('empty', !items.length);
+  }
+
   function render() {
     const verified = state.precincts.filter(item => rate(item) != null);
     $('total-precincts').textContent = state.precincts.length || 349;
@@ -115,6 +144,8 @@
     $('data-summary').textContent = `${state.precincts.length || 349} precincts · current registration and outreach data`;
     $('overview-priority').innerHTML = table(priority().slice(0, 10));
     $('priority-table').innerHTML = table(priority());
+    populateMapFilters();
+    updateMapSummary(state.precincts);
     renderPrecincts();
   }
 
@@ -180,10 +211,7 @@
   function preparePrecinctSearch() {
     state.map.closePopup();
     clearMapHighlights();
-    if ($('congress-change-filter').value !== 'all') {
-      $('congress-change-filter').value = 'all';
-      renderMapFilter();
-    }
+    resetMapFilters(false);
     if (!state.map.hasLayer(state.layer)) state.layer.addTo(state.map);
   }
 
@@ -468,14 +496,29 @@
     L.control.layers(null, overlays, { collapsed: true, position: 'topright' }).addTo(state.map);
   }
 
-  function renderMapFilter() {
+  function renderMapFilter(fitBounds = false) {
     if (!state.layer || !state.geojson) return;
-    const selected = $('congress-change-filter').value;
-    const features = state.geojson.features.filter(feature => selected === 'all' || congressionalFields(feature.properties || {}).change === selected);
+    const selected = Object.fromEntries(mapFilterIds.map(id => [id, $(id).value]));
+    const features = state.geojson.features.filter(feature => {
+      const item = feature.properties || {};
+      const congress = congressionalFields(item);
+      return (selected['neighborhood-filter'] === 'all' || (item.all_neighborhoods || []).includes(selected['neighborhood-filter'])) &&
+        (selected['council-filter'] === 'all' || item.council_district === selected['council-filter']) &&
+        (selected['planning-filter'] === 'all' || (item.all_planning_districts || []).includes(selected['planning-filter'])) &&
+        (selected['congress-district-filter'] === 'all' || congress.congress2026 === selected['congress-district-filter']) &&
+        (selected['congress-change-filter'] === 'all' || congress.change === selected['congress-change-filter']);
+    });
     state.highlightedLayer = null;
     state.layer.clearLayers();
     state.layer.addData({ type: 'FeatureCollection', features });
     $('map-precinct-count').textContent = `${features.length} precinct${features.length === 1 ? '' : 's'}`;
+    updateMapSummary(features);
+    if (fitBounds && features.length) state.map.fitBounds(state.layer.getBounds(), { padding: [18, 18] });
+  }
+
+  function resetMapFilters(fitBounds = true) {
+    mapFilterIds.forEach(id => { $(id).value = 'all'; });
+    renderMapFilter(fitBounds);
   }
 
   document.querySelectorAll('[data-panel]').forEach(button => button.addEventListener('click', () => {
@@ -484,7 +527,16 @@
     if (button.dataset.panel === 'map') initMap();
   }));
   $('precinct-search').addEventListener('input', renderPrecincts);
-  $('congress-change-filter').addEventListener('change', renderMapFilter);
+  mapFilterIds.forEach(id => $(id).addEventListener('change', () => {
+    state.map.closePopup();
+    clearMapHighlights();
+    renderMapFilter(true);
+  }));
+  $('clear-map-filters').addEventListener('click', () => {
+    state.map.closePopup();
+    clearMapHighlights();
+    resetMapFilters(true);
+  });
   $('precinct-map-search-button').addEventListener('click', () => {
     if (canonicalPrecinct($('precinct-map-search').value)) findPrecinctOnMap();
     else selectMapSearchResult(0);
