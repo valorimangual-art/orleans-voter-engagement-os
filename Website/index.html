@@ -6,9 +6,17 @@
 		<title>Orleans Parish Voter Outreach</title>
 		<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 		<link rel="stylesheet" href="outreach.css" />
+		<link rel="stylesheet" href="leaflet.photon.css" />
+		<link rel="stylesheet" href="tom-select.default.min.css" />
 		<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+		<!-- unused code paths
 		<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 		<script src="supabase-config.js"></script>
+		-->
+
+		<script src="leaflet.photon.js"></script>
+		<script src="tom-select.base.js"></script>
 	</head>
 	<body>
 		<header class="site-header">
@@ -17,9 +25,10 @@
 				<p id="data-summary">349 precincts · loading current outreach data…</p>
 			</div>
 		</header>
-		<nav class="tabs" aria-label="Main navigation">
-			<button class="active" data-panel="overview">Overview</button>
-			<button data-panel="map">Map</button>
+		<!-- hide navigation group -->
+		<nav class="tabs" aria-label="Main navigation" style="display:none;">
+			<button data-panel="overview">Overview</button>
+			<button class="active" data-panel="map">Map</button>
 			<button data-panel="precincts">Precincts</button>
 			<button data-panel="priority">Priority List</button>
 			<button data-panel="volunteers">Volunteers</button>
@@ -27,7 +36,7 @@
 		</nav>
 		<main>
 			<div id="message" class="message hidden" role="status"></div>
-			<section id="overview" class="panel active">
+			<section id="overview" class="panel">
 				<div class="cards">
 					<article class="card"><strong id="total-precincts">349</strong><span>Precincts</span></article>
 					<article class="card"><strong id="total-registered">—</strong><span>Registered voters</span></article>
@@ -43,8 +52,8 @@
 				</div>
 				<div id="overview-priority" class="table-wrap"></div>
 			</section>
-			<section id="map" class="panel">
-				<div class="map-toolbar">
+			<section id="map" class="panel active">
+				<div class="map-toolbar" style="display:none;">
 					<div class="map-search">
 						<label for="precinct-map-search">Find precinct or address</label>
 						<div class="map-search-fields">
@@ -63,7 +72,11 @@
 					<span id="map-precinct-count" aria-live="polite">349 precincts</span>
 				</div>
 				<div class="map-filters" aria-label="Geographic filters">
-					<label for="neighborhood-filter"
+					<label for="precinct-filter"
+						>Precinct<select id="precinct-filter">
+							<option value="all">All precincts</option>
+						</select></label					
+					><label for="neighborhood-filter"
 						>Neighborhood<select id="neighborhood-filter">
 							<option value="all">All neighborhoods</option>
 						</select></label

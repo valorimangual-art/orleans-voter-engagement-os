@@ -2,7 +2,7 @@
   'use strict';
 
   const state = { precincts: [], geojson: null, locations: [], map: null, layer: null, layers: {}, highlightedLayer: null, highlightedLocation: null, searchResults: [] };
-  const mapFilterIds = ['neighborhood-filter', 'council-filter', 'planning-filter', 'congress-district-filter', 'congress-change-filter'];
+  const mapFilterIds = ['precinct-filter', 'neighborhood-filter', 'council-filter', 'planning-filter', 'congress-district-filter', 'congress-change-filter'];
   const $ = id => document.getElementById(id);
   const num = value => {
     const parsed = Number(value);
@@ -113,11 +113,33 @@
     $(id).replaceChildren(new Option(allLabel, 'all'), ...options.map(value => new Option(value, value)));
   }
 
+  let precinctFilter = null;
+  let neighborhoodFilter = null;
+  let isPopulated = false;
   function populateMapFilters() {
-    populateFilter('neighborhood-filter', state.precincts.flatMap(item => item.all_neighborhoods || [item.primary_neighborhood]).filter(Boolean), 'All neighborhoods');
-    populateFilter('council-filter', state.precincts.map(item => item.council_district).filter(Boolean), 'All council districts');
-    populateFilter('planning-filter', state.precincts.flatMap(item => item.all_planning_districts || [item.primary_planning_district]).filter(Boolean), 'All planning districts');
-    populateFilter('congress-district-filter', state.precincts.map(item => congressionalFields(item).congress2026).filter(Boolean), 'All congressional districts');
+	
+	// guard against duplicate invocations
+	if( isPopulated ) return; isPopulated = true;
+
+	populateFilter('precinct-filter', state.precincts.map(item => item.area_code ).filter(Boolean), 'All precincts');
+
+	//! this should be by primary_neighborhood only
+	populateFilter('neighborhood-filter', state.precincts.flatMap(item => item.all_neighborhoods || [item.primary_neighborhood]).filter(Boolean), 'All neighborhoods');
+    //! this should be by primary_neighborhood only
+
+
+	populateFilter('council-filter', state.precincts.map(item => item.council_district).filter(Boolean), 'All council districts');
+    
+	//! this should be by primary_planning_district only 
+	populateFilter('planning-filter', state.precincts.flatMap(item => item.all_planning_districts || [item.primary_planning_district]).filter(Boolean), 'All planning districts');
+	//! this should be by primary_planning_district only 
+    
+	populateFilter('congress-district-filter', state.precincts.map(item => congressionalFields(item).congress2026).filter(Boolean), 'All congressional districts');
+
+	// create TomSelect inputs for precinct and neigboorhood filters
+	precinctFilter = new TomSelect("#precinct-filter");
+	neighborhoodFilter = new TomSelect("#neighborhood-filter");
+
   }
 
   function updateMapSummary(features) {
@@ -212,11 +234,13 @@
     state.map.closePopup();
     clearMapHighlights();
     resetMapFilters(false);
+
+	//! is this actually needed????
     if (!state.map.hasLayer(state.layer)) state.layer.addTo(state.map);
   }
 
-  function findPrecinctOnMap() {
-    const input = $('precinct-map-search');
+  function findPrecinctOnMap( manualInput ) {
+    const input = manualInput || $('precinct-map-search');
     const target = canonicalPrecinct(input.value);
     const item = state.precincts.find(precinct => canonicalPrecinct(code(precinct)) === target);
     if (!target || !item) {
@@ -284,34 +308,38 @@
       $('map-search-status').textContent = 'Map locations are still loading';
       return;
     }
-    const point = feature.geometry.coordinates;
+    
+	resetMapFilters( false );
+
+	const point = feature.geometry.coordinates;
     const inside = state.geojson.features.filter(precinct => pointRelationToFeature(point, precinct) === 'inside');
     const boundaries = state.geojson.features.filter(precinct => pointRelationToFeature(point, precinct) === 'boundary');
+
     if (boundaries.length || inside.length !== 1) {
       $('map-search-status').textContent = boundaries.length ? 'Location lies on a precinct boundary' : inside.length ? 'Location matches multiple precincts' : 'Location is outside all precincts';
       hideMapSearchResults();
       return;
     }
+
     preparePrecinctSearch();
     const target = canonicalPrecinct(code(inside[0].properties));
     let precinctLayer = null;
-    state.layer.eachLayer(layer => {
+    
+	state.layer.eachLayer(layer => {
       if (canonicalPrecinct(code(layer.feature?.properties)) === target) precinctLayer = layer;
-    });
-    const locationLayer = state.layers.locations.getLayers().find(layer => layer.feature === feature);
-    if (!precinctLayer || !locationLayer) {
+    });    
+
+	if (!precinctLayer) {
       $('map-search-status').textContent = 'Location could not be displayed';
       return;
     }
+
+	// format: feature name from geocoded address search result - `123 main st, 90210`
+	feature.properties.name = `${feature.properties.housenumber} ${feature.properties.street}, ${feature.properties.postcode}`;
+
     const label = locationLabel(feature.properties || {});
     showPrecinctLayer(precinctLayer, label, point);
-    state.highlightedLocation = locationLayer;
-    locationLayer.setStyle({ radius: 8, weight: 3, fillOpacity: 1 });
-    if (!state.map.hasLayer(state.layers.locations)) locationLayer.addTo(state.map);
-    $('precinct-map-search').value = label;
-    $('precinct-map-search').blur();
-    hideMapSearchResults();
-    $('map-search-status').textContent = `Address is in ${code(inside[0].properties)}`;
+    state.highlightedLocation = precinctLayer;
     state.map.flyTo([point[1], point[0]], 16, { duration: 0.6 });
   }
 
@@ -370,7 +398,8 @@
       state.geojson = await fetchGeoJSON('precinct_boundaries.geojson');
       state.precincts = state.geojson.features.map(feature => feature.properties || {});
       render();
-    } catch (error) {
+    
+	} catch (error) {
       console.error('[Map] Failed to load precincts from precinct_boundaries.geojson:', error);
       message('The precinct data could not be loaded.');
       render();
@@ -382,7 +411,27 @@
       setTimeout(() => state.map.invalidateSize(), 50);
       return;
     }
-    state.map = L.map('precinct-map').setView([29.97, -90.07], 12);
+    
+	// init: precinct map without zoom control in top-right corner
+	state.map = L.map( 'precinct-map', { zoomControl: false } ).setView([29.97, -90.07], 12);	
+	const zoomControl = new L.Control.Zoom({position: 'topright'}).addTo( state.map );
+
+	// init: photon geocode search control restricted to nola geo-bounds
+	//       calls findLocationOnMap(...) with result feature
+	const photonSearch = L.control.photon({
+		onSelected:  findLocationOnMap,
+		placeholder: 'Enter street address...',
+		noResultLabel: 'No results found...',		
+		includePosition: true,
+		location_bias_scale: 0.0,
+		feedbackEmail: null,
+		position: 'topleft',
+		limit: 5,	
+		bbox: [ -90.826, 29.76, -88.93, 30.27 ],
+		lang: 'en'
+  	});
+	photonSearch.addTo( state.map );
+
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap contributors', maxZoom: 18
     }).addTo(state.map);
@@ -502,30 +551,45 @@
     const features = state.geojson.features.filter(feature => {
       const item = feature.properties || {};
       const congress = congressionalFields(item);
-      return (selected['neighborhood-filter'] === 'all' || (item.all_neighborhoods || []).includes(selected['neighborhood-filter'])) &&
-        (selected['council-filter'] === 'all' || item.council_district === selected['council-filter']) &&
+      return (
+	  	(selected['precinct-filter'] === 'all' || item?.area_code === selected['precinct-filter']) &&
+	  	
+		//! this should be done by primary_neighborhood only
+		(selected['neighborhood-filter'] === 'all' || (item.all_neighborhoods || []).includes(selected['neighborhood-filter'])) &&
+        //! this should be done by primary_neighborhood only
+
+		(selected['council-filter'] === 'all' || item.council_district === selected['council-filter']) &&
+
+		//! this should be done by primary_planing_district only
         (selected['planning-filter'] === 'all' || (item.all_planning_districts || []).includes(selected['planning-filter'])) &&
+		//! this should be done by primary_planning_district only
+
         (selected['congress-district-filter'] === 'all' || congress.congress2026 === selected['congress-district-filter']) &&
-        (selected['congress-change-filter'] === 'all' || congress.change === selected['congress-change-filter']);
+        (selected['congress-change-filter'] === 'all' || congress.change === selected['congress-change-filter'])
+	  );
     });
     state.highlightedLayer = null;
     state.layer.clearLayers();
     state.layer.addData({ type: 'FeatureCollection', features });
     $('map-precinct-count').textContent = `${features.length} precinct${features.length === 1 ? '' : 's'}`;
     updateMapSummary(features);
-    if (fitBounds && features.length) state.map.fitBounds(state.layer.getBounds(), { padding: [18, 18] });
+	if (fitBounds && features.length) state.map.fitBounds(state.layer.getBounds(), { padding: [18, 18] });
+	
   }
 
   function resetMapFilters(fitBounds = true) {
-    mapFilterIds.forEach(id => { $(id).value = 'all'; });
+    mapFilterIds.forEach( id => { 
+		$(id).value = 'all'; 
+		$(id)?.tomselect?.setValue('all');
+	});
     renderMapFilter(fitBounds);
   }
 
   document.querySelectorAll('[data-panel]').forEach(button => button.addEventListener('click', () => {
     document.querySelectorAll('[data-panel]').forEach(item => item.classList.toggle('active', item === button));
     document.querySelectorAll('.panel').forEach(panel => panel.classList.toggle('active', panel.id === button.dataset.panel));
-    if (button.dataset.panel === 'map') initMap();
-  }));
+	if (button.dataset.panel === 'map') initMap();
+}));
   $('precinct-search').addEventListener('input', renderPrecincts);
   mapFilterIds.forEach(id => $(id).addEventListener('change', () => {
     state.map.closePopup();
@@ -560,4 +624,8 @@
   } else {
     load();
   }
+
+  // map initialization runs unconditionally at startup
+  initMap();
+  
 })();
