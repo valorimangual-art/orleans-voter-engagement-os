@@ -1,0 +1,20 @@
+# Statistics Analysis Notes:
+	The following are notes on how to approach the data in the precinct statistics spreadsheet.
+	The usage patterns are irrespective of any selected group and should be applied to any subset of the data
+
+## Interface Notes:
+	* The columns on the main tab (precincts) are auto-filtered - clicking on the dropdown icon will provide filtering options
+	* The pivot tables (tabs labeled by_xxx) are interactive
+	** Clicking on a cell will create a new spreadsheet containing the underlying data
+	** The group rows can be filtered and the tables totals will automatically update
+
+## Usage Pattern for Voter Registration
+	The primary metric for efficiently canvassing unregistered voters is the absolute number of *unregisted voters*!
+	Sort by total number of unregistered voters and then examine the registration rate.
+	An area that is high in absolute numbers of *unregistered* voters and has low registration rates increases the chance that a given door is an unregistered voter.
+	Note that the bias of cultural factors need to be removed! For example Tulane has a high unregistered number, but it also has a population (students) that are ineligible!
+
+## Usage Pattern for Voter Activation
+	The primary metric for efficiently canvassing *registered* voters -- ie: voter mobilization
+	Sort by total number of registered voters and then examine the registration rate.
+	An area that is high in absolute numbers of registered voters and has high registration rates increases the chance that a given door is a registered voter.
