@@ -21,11 +21,17 @@ https://valorimangual-art.github.io/orleans-voter-engagement-os/
 
 ## Data and privacy
 
-The public page reads a limited set of precinct statistics from the Supabase `precincts` table. It does not query the `volunteers` table or download volunteer names, contact details, addresses, locations, or notes.
+The public page loads precinct statistics and boundaries from `Website/precinct_boundaries.geojson`. It reads only `precinct_ward` and `volunteer_count` from Supabase. Volunteer tracking consists of a single quantity per precinct, displayed in the precinct tables, map popups, overview total, and filtered map summary. There is no volunteer tab or individual volunteer information.
 
-The Supabase publishable key is allowed in browser code. Security must still be enforced in Supabase with Row Level Security (RLS). Anonymous users should have read-only access to approved public statistics and no row-level access to private volunteer records.
+The Supabase publishable key is allowed in browser code. Security must still be enforced in Supabase with Row Level Security (RLS). Anonymous users should have read-only access to approved public statistics and no permission to change counts from the public website.
 
 Population rates above 100% are treated as invalid and excluded from the public priority list until the geographic crosswalk is verified.
+
+## Updating volunteer counts
+
+In the Supabase Table Editor, open `precincts`, find the `precinct_ward`, and edit only `volunteer_count`. Enter a nonnegative whole number; use `0` for no volunteers or leave it blank if the quantity is unknown. Refresh the website to see updates. Count each volunteer in one precinct to avoid double counting.
+
+Totals show `—` when any included precinct has an unknown count. Map filters total the matching precincts, including whole precincts that intersect a selected neighborhood. No names, contact information, assignments to individuals, or notes are needed.
 
 ## Preview locally
 
