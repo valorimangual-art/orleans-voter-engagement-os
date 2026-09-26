@@ -15,14 +15,6 @@
   const code = item => item?.area_code || item?.precinct_ward || item?.code || item?.precinct || 'Unknown';
   const name = item => item?.area_name || code(item);
   const registered = item => num(item?.registered_voters ?? item?.registered ?? item?.total_registered);
-  const volunteers = item => {
-    const value = item?.volunteer_count;
-    return Number.isSafeInteger(value) && value >= 0 ? value : null;
-  };
-  const volunteerTotal = items => {
-    const counts = items.map(volunteers);
-    return counts.some(value => value == null) ? null : counts.reduce((sum, value) => sum + value, 0);
-  };
   const population = item => num(item?.vap_current ?? item?.vap_projected_2026 ?? item?.vap ?? item?.voting_age_population ?? item?.adult_population);
   const gap = item => {
     const pop = population(item);
@@ -81,7 +73,6 @@
       <strong class="popup-title">Precinct ${esc(code(item))}</strong>
       <dl class="popup-primary">
         ${popupMetric('Registered voters', fmt(registered(item)))}
-        ${popupMetric('Volunteers', fmt(volunteers(item)))}
         ${popupMetric('Projected 2026 VAP', fmt(population(item)))}
         ${popupMetric('Registration rate', registrationRate == null ? 'No data' : `${(registrationRate * 100).toFixed(1)}%`, registrationRate > 1 ? 'review' : '')}
         ${registrationRate > 1 ? popupMetric('Status', 'Registered &gt; projected VAP', 'review') : ''}
@@ -109,8 +100,8 @@
 
   function table(rows) {
     if (!rows.length) return '<div class="empty-state"><p>No matching verified records are available.</p></div>';
-    return `<table><thead><tr><th>Precinct</th><th>Registered</th><th>VAP</th><th>Gap</th><th>Reg. Rate</th><th>Volunteers</th></tr></thead><tbody>${rows.map(item => `
-      <tr><td><strong>${esc(name(item))}</strong><br><small>${esc(code(item))}</small></td><td>${fmt(registered(item))}</td><td>${fmt(population(item))}</td><td>${fmt(gap(item))}</td><td>${ratePill(item)}</td><td>${fmt(volunteers(item))}</td></tr>`).join('')}</tbody></table>`;
+    return `<table><thead><tr><th>Precinct</th><th>Registered</th><th>VAP</th><th>Gap</th><th>Reg. Rate</th></tr></thead><tbody>${rows.map(item => `
+      <tr><td><strong>${esc(name(item))}</strong><br><small>${esc(code(item))}</small></td><td>${fmt(registered(item))}</td><td>${fmt(population(item))}</td><td>${fmt(gap(item))}</td><td>${ratePill(item)}</td></tr>`).join('')}</tbody></table>`;
   }
 
   function priority() {
@@ -135,7 +126,6 @@
     const vapTotal = items.reduce((sum, item) => sum + (population(item) || 0), 0);
     const aggregateRate = vapTotal > 0 ? registeredTotal / vapTotal : null;
     $('summary-precincts').textContent = items.length.toLocaleString();
-    $('summary-volunteers').textContent = fmt(volunteerTotal(items));
     $('summary-registered').textContent = registeredTotal.toLocaleString();
     $('summary-vap').textContent = vapTotal.toLocaleString();
     $('summary-gap').textContent = (vapTotal - registeredTotal).toLocaleString();
@@ -149,10 +139,9 @@
   function render() {
     const verified = state.precincts.filter(item => rate(item) != null);
     $('total-precincts').textContent = state.precincts.length || 349;
-    $('volunteer-count').textContent = fmt(state.precincts.length ? volunteerTotal(state.precincts) : null);
     $('total-registered').textContent = fmt(state.precincts.reduce((sum, item) => sum + (registered(item) || 0), 0) || null);
     $('verified-vap').textContent = fmt(verified.reduce((sum, item) => sum + (population(item) || 0), 0) || null);
-    $('data-summary').textContent = `${state.precincts.length || 349} precincts · current registration and outreach data`;
+    $('data-summary').textContent = `${state.precincts.length || 349} precincts · current registration and civic data`;
     $('overview-priority').innerHTML = table(priority().slice(0, 10));
     $('priority-table').innerHTML = table(priority());
     populateMapFilters();
